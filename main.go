@@ -38,14 +38,17 @@ func check(e error) {
 
 // Load oauth2 token from local file
 func loadToken(ctx context.Context) string {
+
 	f, err := os.Open("token.json")
 	check(err)
 	defer f.Close()
 
+	// Read token from file
 	var token OAuthToken
 	err = json.NewDecoder(f).Decode(&token)
 	check(err)
 
+	// Check if token is expired
 	if token.Expiry.Before(time.Now()) {
 		fmt.Println("OAuth token is expired")
 		token.AccessToken = oauthRequest(ctx)
@@ -55,6 +58,7 @@ func loadToken(ctx context.Context) string {
 
 	}
 
+	// Return access token
 	return token.AccessToken
 
 }
@@ -67,8 +71,10 @@ func makeRequest(path string, filename string, access_token string) {
 	check(err)
 	defer f2.Close()
 
+	// Set empty next token
 	nextToken := "empty"
 
+	// Loop through all next tokens
 	for nextToken != "" {
 
 		whoop_url := "https://api.prod.whoop.com/developer/" + path
@@ -77,38 +83,33 @@ func makeRequest(path string, filename string, access_token string) {
 			whoop_url = whoop_url + "?nextToken=" + nextToken
 		}
 
-		fmt.Println("whoop url: " + whoop_url)
-
 		// Request sleep data from Whoop API
 		req, err := http.NewRequest("GET", whoop_url, nil)
 		req.Header.Add("Authorization", "Bearer "+access_token)
 		check(err)
 
-		// Perform request
+		// Perform get request
 		client := &http.Client{}
 		res, err := client.Do(req)
 		check(err)
 		defer res.Body.Close()
 
-		// Read response body and write to file
+		// Read response body
 		body, err := io.ReadAll(res.Body)
 		check(err)
-		fmt.Println(string(body))
-		f2.WriteString(string(body))
 
-		// Decode JSON
+		// Write response body to file
+		f2.WriteString(string(body))
+		fmt.Println(strconv.Itoa(res.StatusCode) + " - " + nextToken + "\n" + string(body[:300]) + " ...\n")
+
+		// Decode JSON to get nextToken
 		data := map[string]interface{}{}
 		dec := json.NewDecoder(strings.NewReader(string(body)))
 		dec.Decode(&data)
 
-		// Get next token
+		// Get nextToken
 		jq := jsonq.NewQuery(data)
-		nextToken, err = jq.String("next_token")
-		check(err)
-
-		// Print response status code and body
-		fmt.Println("status code: " + strconv.Itoa(res.StatusCode))
-		fmt.Println(nextToken)
+		nextToken, _ = jq.String("next_token")
 	}
 }
 
@@ -160,7 +161,7 @@ func oauthRequest(ctx context.Context) string {
 	code := parseUrl.Query().Get("code")
 
 	// Exchange code for token
-	tok, err := conf.Exchange(ctx, code)
+	accessToken, err := conf.Exchange(ctx, code)
 	check(err)
 
 	// Write response body to file
@@ -169,16 +170,17 @@ func oauthRequest(ctx context.Context) string {
 	defer f1.Close()
 
 	// Marshal JSON
-	json, err := json.Marshal(tok)
+	json, err := json.Marshal(accessToken)
 	check(err)
 
 	// Write JSON to file
 	_, err = f1.WriteString(string(json))
 	check(err)
 
-	return tok.AccessToken
+	return accessToken.AccessToken
 }
 
+// Main function
 func main() {
 
 	ctx := context.Background()
@@ -186,6 +188,4 @@ func main() {
 
 	// Make requests to Whoop API
 	makeRequest("v1/activity/sleep", "sleep.log", access_token)
-	makeRequest("v1/activity/workout", "workout.log", access_token)
-
 }
