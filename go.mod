@@ -3,6 +3,7 @@ module go-whoop
 go 1.19
 
 require (
+	github.com/jmoiron/jsonq v0.0.0-20150511023944-e874b168d07e
 	github.com/spf13/viper v1.13.0
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
 )

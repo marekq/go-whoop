@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -9,10 +10,23 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
+	"github.com/jmoiron/jsonq"
 	"github.com/spf13/viper"
 	"golang.org/x/oauth2"
 )
+
+type OAuthToken struct {
+	AccessToken  string    `json:"access_token"`
+	TokenType    string    `json:"token_type"`
+	RefreshToken string    `json:"refresh_token"`
+	Expiry       time.Time `json:"expiry"`
+}
+type NextToken struct {
+	NextToken string `json:"next_token"`
+}
 
 // Check error, exit if error
 func check(e error) {
@@ -22,8 +36,85 @@ func check(e error) {
 	}
 }
 
-func main() {
-	ctx := context.Background()
+// Load oauth2 token from local file
+func loadToken(ctx context.Context) string {
+	f, err := os.Open("token.json")
+	check(err)
+	defer f.Close()
+
+	var token OAuthToken
+	err = json.NewDecoder(f).Decode(&token)
+	check(err)
+
+	if token.Expiry.Before(time.Now()) {
+		fmt.Println("OAuth token is expired")
+		token.AccessToken = oauthRequest(ctx)
+
+	} else {
+		fmt.Println("OAuth token not expired")
+
+	}
+
+	return token.AccessToken
+
+}
+
+// Make request to Whoop API
+func makeRequest(path string, filename string, access_token string) {
+
+	// Create log file
+	f2, err := os.Create(filename)
+	check(err)
+	defer f2.Close()
+
+	nextToken := "empty"
+
+	for nextToken != "" {
+
+		whoop_url := "https://api.prod.whoop.com/developer/" + path
+
+		if nextToken != "" && nextToken != "empty" {
+			whoop_url = whoop_url + "?nextToken=" + nextToken
+		}
+
+		fmt.Println("whoop url: " + whoop_url)
+
+		// Request sleep data from Whoop API
+		req, err := http.NewRequest("GET", whoop_url, nil)
+		req.Header.Add("Authorization", "Bearer "+access_token)
+		check(err)
+
+		// Perform request
+		client := &http.Client{}
+		res, err := client.Do(req)
+		check(err)
+		defer res.Body.Close()
+
+		// Read response body and write to file
+		body, err := io.ReadAll(res.Body)
+		check(err)
+		fmt.Println(string(body))
+		f2.WriteString(string(body))
+
+		// Decode JSON
+		data := map[string]interface{}{}
+		dec := json.NewDecoder(strings.NewReader(string(body)))
+		dec.Decode(&data)
+
+		// Get next token
+		jq := jsonq.NewQuery(data)
+		nextToken, err = jq.String("next_token")
+		check(err)
+
+		// Print response status code and body
+		fmt.Println("status code: " + strconv.Itoa(res.StatusCode))
+		fmt.Println(nextToken)
+	}
+}
+
+// OAuth2 request through web browser
+// Tokens are valid for 1 hour
+func oauthRequest(ctx context.Context) string {
 
 	// Read config file from .env
 	viper.SetConfigFile(".env")
@@ -41,7 +132,7 @@ func main() {
 			"offline",
 			//"read:recovery",
 			//"read:cycles",
-			//"read:workout",
+			"read:workout",
 			"read:sleep",
 			//"read:profile",
 			//"read:body_measurement",
@@ -72,32 +163,29 @@ func main() {
 	tok, err := conf.Exchange(ctx, code)
 	check(err)
 
-	// Request sleep data from Whoop API
-	req, err := http.NewRequest("GET", "https://api.prod.whoop.com/developer/v1/activity/sleep", nil)
-	req.Header.Add("Authorization", "Bearer "+tok.AccessToken)
-	check(err)
-
-	// Perform request
-	client := &http.Client{}
-	res, err := client.Do(req)
-	check(err)
-
-	defer res.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(res.Body)
-	check(err)
-
 	// Write response body to file
-	f, err := os.Create("sleep.log")
-
+	f1, err := os.Create("token.json")
 	check(err)
-	defer f.Close()
+	defer f1.Close()
 
-	_, err = f.WriteString(string(body))
+	// Marshal JSON
+	json, err := json.Marshal(tok)
 	check(err)
 
-	// Print response status code and body
-	fmt.Println(strconv.Itoa(res.StatusCode) + string(body))
-	fmt.Println(res.Header)
+	// Write JSON to file
+	_, err = f1.WriteString(string(json))
+	check(err)
+
+	return tok.AccessToken
+}
+
+func main() {
+
+	ctx := context.Background()
+	access_token := loadToken(ctx)
+
+	// Make requests to Whoop API
+	makeRequest("v1/activity/sleep", "sleep.log", access_token)
+	makeRequest("v1/activity/workout", "workout.log", access_token)
+
 }
