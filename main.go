@@ -37,25 +37,25 @@ func check(e error) {
 }
 
 // Load oauth2 token from local file
-func loadToken(ctx context.Context) string {
+func loadToken() string {
 
-	f, err := os.Open("token.json")
-	check(err)
-	defer f.Close()
+	var token *oauth2.Token
 
-	// Read token from file
-	var token OAuthToken
-	err = json.NewDecoder(f).Decode(&token)
-	check(err)
+	if _, err := os.Stat("token.json"); err == nil {
 
-	// Check if token is expired
-	if token.Expiry.Before(time.Now()) {
-		fmt.Println("OAuth token is expired")
-		token.AccessToken = oauthRequest(ctx)
+		f, err := os.Open("token.json")
+		check(err)
+		defer f.Close()
+
+		// Read token from file
+		err = json.NewDecoder(f).Decode(&token)
+		check(err)
+		fmt.Println("Token loaded from file" + token.TokenType + " " + token.AccessToken)
 
 	} else {
-		fmt.Println("OAuth token not expired")
 
+		// Request new token
+		token = oauthRequest()
 	}
 
 	// Return access token
@@ -115,7 +115,7 @@ func makeRequest(path string, filename string, access_token string) {
 
 // OAuth2 request through web browser
 // Tokens are valid for 1 hour
-func oauthRequest(ctx context.Context) string {
+func oauthRequest() *oauth2.Token {
 
 	// Read config file from .env
 	viper.SetConfigFile(".env")
@@ -161,6 +161,7 @@ func oauthRequest(ctx context.Context) string {
 	code := parseUrl.Query().Get("code")
 
 	// Exchange code for token
+	ctx := context.Background()
 	accessToken, err := conf.Exchange(ctx, code)
 	check(err)
 
@@ -177,14 +178,13 @@ func oauthRequest(ctx context.Context) string {
 	_, err = f1.WriteString(string(json))
 	check(err)
 
-	return accessToken.AccessToken
+	return accessToken
 }
 
 // Main function
 func main() {
 
-	ctx := context.Background()
-	access_token := loadToken(ctx)
+	access_token := loadToken()
 
 	// Make requests to Whoop API
 	makeRequest("v1/activity/sleep", "sleep.log", access_token)
