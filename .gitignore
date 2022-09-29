@@ -1,0 +1,4 @@
+*.log
+.env
+go.sum
+token.json
