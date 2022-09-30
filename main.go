@@ -70,7 +70,7 @@ func loadToken(ctx context.Context) *http.Client {
 		// Read token from file
 		err = json.NewDecoder(f).Decode(&token)
 		check(err)
-		fmt.Println("Token loaded from file" + token.TokenType + " " + token.Expiry.String())
+		fmt.Println("Token loaded from file with expiry " + token.Expiry.String())
 
 		// Create client
 		cclient := conf.Client(ctx, token)
@@ -108,17 +108,18 @@ func makeRequest(path string, filename string, cclient *http.Client) {
 		// Request sleep data from Whoop API using client
 		res, err := cclient.Get(whoop_url)
 		check(err)
-		fmt.Println("Status: " + res.Status)
+
+		var decodeStruct models.All
 
 		// Decode JSON to get nextToken
-		var decodeStruct models.Sleep
 		err = json.NewDecoder(res.Body).Decode(&decodeStruct)
 		check(err)
 
 		// Iterate through all structs
 		for _, record := range decodeStruct.Records {
 
-			fmt.Println(res.Status, record)
+			//fmt.Printf("%+v\n", record)
+
 			json, err := json.Marshal(record)
 			check(err)
 
@@ -147,15 +148,15 @@ func oauthRequest(ctx context.Context, conf *oauth2.Config) *http.Client {
 		log.Fatal(err)
 	}
 
-	// Get code from response URL
+	// Get response code from response URL string
 	parseUrl, _ := url.Parse(respUrl)
 	code := parseUrl.Query().Get("code")
 
-	// Exchange code for token
+	// Exchange response code for token
 	accessToken, err := conf.Exchange(ctx, code)
 	check(err)
 
-	// Write response body to file
+	// Write token response body to token.json
 	f1, err := os.Create("token.json")
 	check(err)
 	defer f1.Close()
@@ -164,22 +165,28 @@ func oauthRequest(ctx context.Context, conf *oauth2.Config) *http.Client {
 	json, err := json.Marshal(accessToken)
 	check(err)
 
-	// Write JSON to file
+	// Write JSON string to file
 	_, err = f1.WriteString(string(json))
 	check(err)
 
 	// Create client
 	cclient := conf.Client(ctx, accessToken)
+
+	// Return client
 	return cclient
 }
 
 // Main function
 func main() {
 
+	// Set context and create client
 	ctx := context.Background()
 	cclient := loadToken(ctx)
 
-	// Make requests to Whoop API
+	// Make requests to Whoop Sleep API
 	makeRequest("v1/activity/sleep", "sleep.log", cclient)
+	makeRequest("v1/recovery", "recovery.log", cclient)
+	makeRequest("v1/cycle", "cycle.log", cclient)
+	makeRequest("v1/activity/workout", "workout.log", cclient)
 
 }
