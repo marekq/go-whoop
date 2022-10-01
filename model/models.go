@@ -39,13 +39,6 @@ type Sleep struct {
 	NextToken string `json:"next_token"`
 }
 
-type OAuthToken struct {
-	AccessToken  string    `json:"access_token"`
-	TokenType    string    `json:"token_type"`
-	RefreshToken string    `json:"refresh_token"`
-	Expiry       time.Time `json:"expiry"`
-}
-
 type Recovery struct {
 	Records []struct {
 		CycleID    int       `json:"cycle_id"`
@@ -178,4 +171,12 @@ type All struct {
 		} `json:"score"`
 	} `json:"records"`
 	NextToken string `json:"next_token"`
+}
+
+type TokenLocalFile struct {
+	AccessToken  string `json:"access_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+	Scope        string `json:"scope"`
+	TokenType    string `json:"token_type"`
 }
